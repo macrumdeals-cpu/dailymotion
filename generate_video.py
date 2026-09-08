@@ -1,3 +1,4 @@
+import re
 import base64
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -364,6 +365,32 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
     return video_link
 
 # 7. المشاركة على Bluesky مع طباعة التفاصيل والأخطاء
+
+
+# دالة استخراج الـ Facets لتحويل أي رابط نصي إلى رابط قابل للنقر في Bluesky
+def extract_bluesky_facets(text):
+    facets = []
+    url_regex = r'(https?://[^\s]+)'
+    
+    for match in re.finditer(url_regex, text):
+        url = match.group(0)
+        # حساب النطاق بالبايت (UTF-8 Bytes) لضمان الدقة مع وجود الإيموجي
+        start_byte = len(text[:match.start()].encode('utf-8'))
+        end_byte = len(text[:match.end()].encode('utf-8'))
+        
+        facets.append({
+            "index": {
+                "byteStart": start_byte,
+                "byteEnd": end_byte
+            },
+            "features": [{
+                "$type": "app.bsky.richtext.facet#link",
+                "uri": url
+            }]
+        })
+    return facets
+
+# 7. المشاركة على Bluesky مع تفعيل الروابط القابلة للنقر
 def post_to_bluesky(text_content, video_url):
     if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
         print("⚠️ تم تخطي النشر على Bluesky: متغيرات BLUESKY_HANDLE أو BLUESKY_PASSWORD غير محددة في GitHub Secrets.")
@@ -374,6 +401,7 @@ def post_to_bluesky(text_content, video_url):
         return
         
     try:
+        # 1. تسجيل الدخول
         session_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.server.createSession",
             json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_PASSWORD},
@@ -390,6 +418,9 @@ def post_to_bluesky(text_content, video_url):
         
         post_text = f"{text_content}\n\n🎬 Watch Video: {video_url}"
         
+        # 2. استخراج الـ facets لجعل الرابط قابل للنقر
+        facets = extract_bluesky_facets(post_text)
+        
         headers = {"Authorization": f"Bearer {token}"}
         payload = {
             "repo": did,
@@ -397,10 +428,12 @@ def post_to_bluesky(text_content, video_url):
             "record": {
                 "$type": "app.bsky.feed.post",
                 "text": post_text,
+                "facets": facets,
                 "createdAt": datetime.utcnow().isoformat() + "Z"
             }
         }
         
+        # 3. إنشاء المنشور
         post_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.repo.createRecord",
             headers=headers,
@@ -409,12 +442,14 @@ def post_to_bluesky(text_content, video_url):
         )
         
         if post_res.status_code in [200, 201]:
-            print("=== Shared Successfully to Bluesky! ===")
+            print("=== Shared Successfully to Bluesky (with Clickable Link)! ===")
         else:
             print("❌ فشل نشر التغريدة على Bluesky:", post_res.text)
 
     except Exception as e:
         print("❌ Bluesky Post Error:", e)
+
+
 
 # 8. التشغيل الرئيسي
 if __name__ == "__main__":
