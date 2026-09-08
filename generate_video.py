@@ -228,10 +228,19 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     subprocess.run(cmd, check=True)
     print("=== Final Video Built Successfully! ===")
 
-# 6. الرفع على Dailymotion
+# 6. الرفع على Dailymotion وإدارته داخل البلاي ليست
 def upload_to_dailymotion(video_path, title, playlist_name):
-    if not all([DAILYMOTION_CLIENT_ID, DAILYMOTION_CLIENT_SECRET, DAILYMOTION_USERNAME, DAILYMOTION_PASSWORD]):
-        print("تنبيه: مفاتيح Dailymotion غير مكتملة.")
+    dm_keys = {
+        "DAILYMOTION_CLIENT_ID": DAILYMOTION_CLIENT_ID,
+        "DAILYMOTION_CLIENT_SECRET": DAILYMOTION_CLIENT_SECRET,
+        "DAILYMOTION_USERNAME": DAILYMOTION_USERNAME,
+        "DAILYMOTION_PASSWORD": DAILYMOTION_PASSWORD,
+    }
+    
+    missing_keys = [key for key, value in dm_keys.items() if not value]
+    
+    if missing_keys:
+        print(f"تنبيه: المفاتيح التالية مفقودة في Secrets: {', '.join(missing_keys)}")
         return None
 
     auth_url = "https://api.dailymotion.com/oauth/token"
