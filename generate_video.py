@@ -37,46 +37,41 @@ HISTORY_FILE = "history.json"
 # فحص واعتماد الاتصال مع Dailymotion مبكراً
 
 def verify_dailymotion_auth():
-    cid = "a36f58136ffcdee8e5ea"
-    sec = r"""2$Q#fkdX^uo;]9"C{P#5K\;MI-'P(Z"]"""
-    
+    cid = os.environ.get("DAILYMOTION_CLIENT_ID")
+    sec = os.environ.get("DAILYMOTION_CLIENT_SECRET")
+    username = os.environ.get("DAILYMOTION_USERNAME")
+    password = os.environ.get("DAILYMOTION_PASSWORD")
+
+    if not all([cid, sec, username, password]):
+        print("❌ مفاتيح Dailymotion ناقصة في الـ Secrets")
+        return None
+
     auth_url = "https://api.dailymotion.com/oauth/token"
     headers = {"User-Agent": "Mozilla/5.0"}
-    
+
     try:
-        # المحاولة الأولى: استخدام HTTP Basic Auth لضمان وصول الرموز المعقدة بدون تحريف
         res = requests.post(
             auth_url,
-            auth=HTTPBasicAuth(cid, sec),
-            data={"grant_type": "client_credentials"},
-            headers=headers,
-            timeout=15
-        ).json()
-        
-        token = res.get("access_token")
-        if token:
-            print("✅ تم الاتصال بنجاح عبر Basic Auth!")
-            return token
-
-        # المحاولة الثانية: POST Body المباشر
-        res2 = requests.post(
-            auth_url,
             data={
-                "grant_type": "client_credentials",
+                "grant_type": "password",
                 "client_id": cid,
-                "client_secret": sec
+                "client_secret": sec,
+                "username": username,
+                "password": password,
+                "scope": "manage_videos manage_playlists userinfo"
             },
             headers=headers,
             timeout=15
         ).json()
 
-        token = res2.get("access_token")
+        token = res.get("access_token")
         if token:
-            print("✅ تم الاتصال بنجاح عبر POST Body!")
+            print("✅ تم الاتصال بنجاح بحسابك على Dailymotion!")
             return token
 
-        print("❌ استجابة Dailymotion:", res2)
+        print("❌ استجابة Dailymotion:", res)
         return None
+
     except Exception as e:
         print("❌ خطأ في الاتصال:", e)
         return None
