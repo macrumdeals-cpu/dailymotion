@@ -40,9 +40,7 @@ def verify_dailymotion_auth():
         return None
 
     auth_url = "https://api.dailymotion.com/oauth/token"
-    headers = {"User-Agent": "Mozilla/5.0"}
     
-    # المحاولة الأساسية: إرسال جميع البيانات مباشرة في POST Body
     payload = {
         "grant_type": "client_credentials",
         "client_id": cid,
@@ -51,34 +49,26 @@ def verify_dailymotion_auth():
     }
 
     try:
-        res = requests.post(auth_url, data=payload, headers=headers, timeout=15).json()
+        # المحاولة الأولى: إرسال البيانات كـ JSON لمنع تحريف الرموز الخاصة (Quotes & Backslashes)
+        headers_json = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        res = requests.post(auth_url, json=payload, headers=headers_json, timeout=15).json()
         token = res.get("access_token")
         
-        if token:
-            print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
-            return token
+        # المحاولة الثانية: Form-Data صريحة مع الهيدر المناسب
+        if not token:
+            headers_form = {"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0"}
+            res = requests.post(auth_url, data=payload, headers=headers_form, timeout=15).json()
+            token = res.get("access_token")
+
+        if not token:
+            print("❌ استجابة Dailymotion النهائية:", res)
+            return None
             
-        print("⚠️ المحاولة الأولى لم تنجح، استجابة Dailymotion:", res)
-        
-        # المحاولة الاحتياطية: تضمين client_id في Body مع استخدام Basic Auth
-        res_backup = requests.post(
-            auth_url, 
-            auth=(cid, sec), 
-            data={
-                "grant_type": "client_credentials", 
-                "client_id": cid,
-                "scope": "manage_videos manage_playlists"
-            }, 
-            headers=headers, 
-            timeout=15
-        ).json()
-        
-        token = res_backup.get("access_token")
-        if token:
-            print("✅ تم التحقق عبر المحاولة الاحتياطية بنجاح!")
-            return token
-            
-        print("❌ استجابة المحاولة الاحتياطية:", res_backup)
+        print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
+        return token
+
+    except Exception as e:
+        print("❌ فشل الاتصال مع Dailymotion:", e)
         return None
 
     except Exception as e:
