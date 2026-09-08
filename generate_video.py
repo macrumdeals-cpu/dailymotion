@@ -32,22 +32,20 @@ HISTORY_FILE = "history.json"
 def verify_dailymotion_auth():
     cid = (DAILYMOTION_CLIENT_ID or "").strip()
     sec = (DAILYMOTION_CLIENT_SECRET or "").strip()
-    usr = (DAILYMOTION_USERNAME or "").strip()
-    pwd = (DAILYMOTION_PASSWORD or "").strip()
     
     print(f"🔍 فحص المتغيرات: طول Client ID = {len(cid)} | طول Client Secret = {len(sec)}")
     
-    if not cid or not sec or not usr or not pwd:
-        print("❌ خطأ: أحد البيانات المطلوبة لـ Dailymotion مفقودة في Secrets!")
+    if not cid or not sec:
+        print("❌ خطأ: المفاتيح مفقودة في GitHub Secrets!")
         return None
 
     auth_url = "https://api.dailymotion.com/oauth/token"
+    
+    # استخدام نظام client_credentials المخصص لمفاتيح Studio
     auth_data = {
-        "grant_type": "password",
+        "grant_type": "client_credentials",
         "client_id": cid,
         "client_secret": sec,
-        "username": usr,
-        "password": pwd,
         "scope": "manage_videos manage_playlists"
     }
 
