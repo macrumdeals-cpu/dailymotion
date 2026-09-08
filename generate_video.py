@@ -1,15 +1,14 @@
 import base64
-
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
 import requests
 from requests.auth import HTTPBasicAuth
 import os
 import json
 import random
 import asyncio
-import requests
 import subprocess
 from datetime import datetime
 import edge_tts
@@ -21,10 +20,6 @@ from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 
-# إدخال المفاتيح مباشرة في بداية الملف
-
-
-
 DAILYMOTION_USERNAME = os.environ.get("DAILYMOTION_USERNAME")
 DAILYMOTION_PASSWORD = os.environ.get("DAILYMOTION_PASSWORD")
 
@@ -34,7 +29,6 @@ BLUESKY_PASSWORD = os.environ.get("BLUESKY_PASSWORD")
 HISTORY_FILE = "history.json"
 
 # فحص واعتماد الاتصال مع Dailymotion مبكراً
-
 def verify_dailymotion_auth():
     cid = os.environ.get("DAILYMOTION_CLIENT_ID")
     sec = os.environ.get("DAILYMOTION_CLIENT_SECRET")
@@ -75,9 +69,6 @@ def verify_dailymotion_auth():
         print("❌ خطأ في الاتصال:", e)
         return None
 
-
-
-
 # جلب أفضل الفيديوهات أداءً على القناة لربط السكريبت بها
 def fetch_top_performing_videos(access_token):
     if not access_token:
@@ -110,12 +101,12 @@ def save_topic_to_history(title):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-# 2. توليد السكريبت
+# 2. توليد السكريبت والوصف والوسوم تلقائياً
 def generate_script(top_performers=[]):
     client = genai.Client(api_key=GEMINI_API_KEY)
     used_topics = get_used_topics()
     
-    video_type = "LONG_SHORT"  # التثبيت على نظام الفيديوهات القصيرة الخفيفة والسريعة
+    video_type = "LONG_SHORT"
     
     playlists_map = {
         "Educational & Science": "Educational Science & Facts",
@@ -132,10 +123,10 @@ def generate_script(top_performers=[]):
 
     analytics_context = ""
     if top_performers:
-        analytics_context = f"Top Performing Videos on Channel: {', '.join(top_performers)}. Create a script that matches the high-engagement style and topics of these successful videos."
+        analytics_context = f"Top Performing Videos on Channel: {', '.join(top_performers)}. Create content that matches this high engagement style."
 
     prompt = f"""
-    You are an expert viral content creator.
+    You are an expert viral content creator & SEO specialist.
     Category: {selected_category}.
     Video Type: {video_type}.
     {duration_instruction}
@@ -145,9 +136,11 @@ def generate_script(top_performers=[]):
     - DO NOT repeat any of these topics: {json.dumps(used_topics)}
     - High retention educational hook in the first 3 seconds.
     - Output JSON ONLY with these exact keys:
-       - "title": Video Title (Catchy, SEO friendly)
+       - "title": Video Title (Catchy, SEO optimized, under 90 characters)
+       - "description": Complete viral YouTube/Dailymotion SEO description with summary, key takeaways, hashtags, and call to action (150-250 words)
+       - "tags": Array of 8 to 12 relevant SEO tag strings (single words or short phrases)
        - "script": Full engaging voiceover script (around 100-120 words max)
-       - "search_queries": Array of 4 English keywords for stock videos
+       - "search_queries": Array of 4 English keywords for Pexels stock videos
        - "bluesky_post": Short viral post for Bluesky with hashtags
     """
     
@@ -165,7 +158,7 @@ def generate_script(top_performers=[]):
     data["orientation"] = orientation
     data["playlist_name"] = playlist_name
     
-    print(f"=== Script Generated | Category: {selected_category} ===")
+    print(f"=== Script & SEO Data Generated | Category: {selected_category} ===")
     save_topic_to_history(data.get("title"))
     return data
 
@@ -231,7 +224,7 @@ async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="s
         
     print("=== Audio & Subtitles Generated ===")
 
-# 5. المونتاج المحسن بدون إغراق سجلات السطور
+# 5. المونتاج المحسن
 def build_final_video(video_files, audio_path, orientation, output_path="final_video.mp4"):
     audio = AudioFileClip(audio_path)
     audio_duration = audio.duration
@@ -266,7 +259,6 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     
     temp_output = "temp_video.mp4"
     
-    # تصدير الفيديو بهدوء ودون إغراق السجل بالسطور
     print("=== Processing Video Render (Please wait)... ===")
     final_clip.write_videofile(
         temp_output,
@@ -284,7 +276,6 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     srt_file = "subtitles.srt"
     has_valid_subtitles = os.path.exists(srt_file) and os.path.getsize(srt_file) > 0
     
-    # إخراج ترجمة واضحة ومحترفة في الثلث السفلي من الشاشة
     if has_valid_subtitles:
         subtitle_filter = f"subtitles={srt_file}:force_style='FontSize={font_size},FontName=Arial,Bold=1,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v},Alignment=2'"
         cmd = [
@@ -306,8 +297,8 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     subprocess.run(cmd, check=True)
     print("=== Final Video Built Successfully! ===")
 
-# 6. الرفع المباشر لـ Dailymotion
-def upload_to_dailymotion(access_token, video_path, title, playlist_name):
+# 6. الرفع المباشر لـ Dailymotion مع الإعدادات الكاملة والوصف والوسوم
+def upload_to_dailymotion(access_token, video_path, title, description, tags, playlist_name):
     if not access_token:
         return None
 
@@ -328,24 +319,31 @@ def upload_to_dailymotion(access_token, video_path, title, playlist_name):
         print("=== فشل رفع الملف ===")
         return None
 
+    # تحويل قائمة الوسوم إلى سلسلة نصية مفصولة بفواصل
+    tags_string = ",".join(tags) if isinstance(tags, list) else str(tags)
+
     publish_data = {
         "url": file_url,
         "title": title[:100],
-        "tags": "education,facts,shorts,viral",
+        "description": description,
+        "tags": tags_string,
         "published": "true",
         "channel": "tech",
+        "language": "en",
         "is_created_for_kids": "false"
     }
+    
     publish_res = requests.post("https://api.dailymotion.com/me/videos", headers=headers, data=publish_data).json()
     video_id = publish_res.get("id")
     
     if not video_id:
-        print("=== فشل نشر الفيديو ===")
+        print("=== فشل نشر الفيديو ===", publish_res)
         return None
 
     video_link = f"https://www.dailymotion.com/video/{video_id}"
-    print("=== Published to Dailymotion:", video_link)
+    print("=== Published to Dailymotion with Full SEO Meta:", video_link)
 
+    # إضافة الفيديو للقائمة
     try:
         user_playlists = requests.get("https://api.dailymotion.com/me/playlists", headers=headers).json().get("list", [])
         playlist_id = None
@@ -415,7 +413,15 @@ if __name__ == "__main__":
     bg_files = fetch_pexels_videos(script_data["search_queries"], script_data["orientation"])
     build_final_video(bg_files, "audio.mp3", script_data["orientation"], "final_video.mp4")
     
-    # 4. الرفع والنشر
-    video_url = upload_to_dailymotion(dm_token, "final_video.mp4", script_data["title"], script_data["playlist_name"])
+    # 4. الرفع والنشر المكتمل بالإعدادات والوصف والوسوم
+    video_url = upload_to_dailymotion(
+        dm_token,
+        "final_video.mp4",
+        script_data["title"],
+        script_data.get("description", script_data["title"]),
+        script_data.get("tags", ["education", "facts", "shorts"]),
+        script_data["playlist_name"]
+    )
+    
     if video_url:
         post_to_bluesky(script_data["bluesky_post"], video_url)
