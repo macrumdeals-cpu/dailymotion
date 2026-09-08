@@ -365,19 +365,31 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
     return video_link
 
 # 7. المشاركة على Bluesky
+# 7. المشاركة على Bluesky مع كشف الأخطاء
 def post_to_bluesky(text_content, video_url):
-    if not BLUESKY_HANDLE or not BLUESKY_PASSWORD or not video_url:
+    if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
+        print("⚠️ تم تخطي النشر على Bluesky: متغيرات BLUESKY_HANDLE أو BLUESKY_PASSWORD غير محددة في GitHub Secrets.")
+        return
+        
+    if not video_url:
+        print("⚠️ تم تخطي النشر على Bluesky: لا يوجد رابط فيديو للنشر.")
         return
         
     try:
+        # 1. تسجيل الدخول واختبار الاعتماد
         session_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.server.createSession",
             json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_PASSWORD},
             timeout=15
-        ).json()
+        )
         
-        token = session_res.get("accessJwt")
-        did = session_res.get("did")
+        if session_res.status_code != 200:
+            print("❌ فشل تسجيل الدخول في Bluesky:", session_res.text)
+            return
+
+        session_data = session_res.json()
+        token = session_data.get("accessJwt")
+        did = session_data.get("did")
         
         post_text = f"{text_content}\n\nWatch video: {video_url}"
         
@@ -392,10 +404,21 @@ def post_to_bluesky(text_content, video_url):
             }
         }
         
-        requests.post("https://bsky.social/xrpc/com.atproto.repo.createRecord", headers=headers, json=payload, timeout=15)
-        print("=== Shared Successfully to Bluesky! ===")
+        # 2. إنشاء المنشور
+        post_res = requests.post(
+            "https://bsky.social/xrpc/com.atproto.repo.createRecord",
+            headers=headers,
+            json=payload,
+            timeout=15
+        )
+        
+        if post_res.status_code in [200, 201]:
+            print("=== Shared Successfully to Bluesky! ===")
+        else:
+            print("❌ فشل نشر التغريدة على Bluesky:", post_res.text)
+
     except Exception as e:
-        print("Bluesky Post Error:", e)
+        print("❌ Bluesky Post Error:", e)
 
 # 8. التشغيل الرئيسي
 if __name__ == "__main__":
