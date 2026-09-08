@@ -1,7 +1,8 @@
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-
+import requests
+from requests.auth import HTTPBasicAuth
 import os
 import json
 import random
@@ -30,51 +31,55 @@ BLUESKY_PASSWORD = os.environ.get("BLUESKY_PASSWORD")
 HISTORY_FILE = "history.json"
 
 # فحص واعتماد الاتصال مع Dailymotion مبكراً
+
 def verify_dailymotion_auth():
-    cid = (DAILYMOTION_CLIENT_ID or "").strip()
-    sec = (DAILYMOTION_CLIENT_SECRET or "").strip()
+    cid = "a36f58136ffcdee8e5ea"
+    sec = r"""2$Q#fkdX^uo;]9"C{P#5K\;MI-'P(Z"]"""
     
-    print(f"🔍 فحص المتغيرات: طول Client ID = {len(cid)} | طول Client Secret = {len(sec)}")
-    
-    if not cid or not sec:
-        print("❌ خطأ: المفاتيح مفقودة في GitHub Secrets!")
-        return None
-
     auth_url = "https://api.dailymotion.com/oauth/token"
+    headers = {"User-Agent": "Mozilla/5.0"}
     
-    payload = {
-        "grant_type": "client_credentials",
-        "client_id": cid,
-        "client_secret": sec,
-        "scope": "manage_videos manage_playlists"
-    }
-
     try:
-        # المحاولة الأولى: إرسال البيانات كـ JSON لمنع تحريف الرموز الخاصة (Quotes & Backslashes)
-        headers_json = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
-        res = requests.post(auth_url, json=payload, headers=headers_json, timeout=15).json()
-        token = res.get("access_token")
+        # المحاولة الأولى: استخدام HTTP Basic Auth لضمان وصول الرموز المعقدة بدون تحريف
+        res = requests.post(
+            auth_url,
+            auth=HTTPBasicAuth(cid, sec),
+            data={"grant_type": "client_credentials"},
+            headers=headers,
+            timeout=15
+        ).json()
         
-        # المحاولة الثانية: Form-Data صريحة مع الهيدر المناسب
-        if not token:
-            headers_form = {"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0"}
-            res = requests.post(auth_url, data=payload, headers=headers_form, timeout=15).json()
-            token = res.get("access_token")
+        token = res.get("access_token")
+        if token:
+            print("✅ تم الاتصال بنجاح عبر Basic Auth!")
+            return token
 
-        if not token:
-            print("❌ استجابة Dailymotion النهائية:", res)
-            return None
-            
-        print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
-        return token
+        # المحاولة الثانية: POST Body المباشر
+        res2 = requests.post(
+            auth_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": cid,
+                "client_secret": sec
+            },
+            headers=headers,
+            timeout=15
+        ).json()
 
+        token = res2.get("access_token")
+        if token:
+            print("✅ تم الاتصال بنجاح عبر POST Body!")
+            return token
+
+        print("❌ استجابة Dailymotion:", res2)
+        return None
     except Exception as e:
-        print("❌ فشل الاتصال مع Dailymotion:", e)
+        print("❌ خطأ في الاتصال:", e)
         return None
 
-    except Exception as e:
-        print("❌ فشل الاتصال مع Dailymotion:", e)
-        return None
+
+
+
 # جلب أفضل الفيديوهات أداءً على القناة لربط السكريبت بها
 def fetch_top_performing_videos(access_token):
     if not access_token:
