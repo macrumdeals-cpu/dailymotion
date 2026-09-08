@@ -1,10 +1,22 @@
 import os
 import json
+import random
+import asyncio
+import requests
+import subprocess
+import edge_tts
 from google import genai
 from google.genai import types
+from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
+
+if not GEMINI_API_KEY or not PEXELS_API_KEY:
+    raise ValueError("يرجى ضبط GEMINI_API_KEY و PEXELS_API_KEY في إعدادات GitHub Secrets!")
 
 def generate_script():
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = """
     You are an expert viral YouTube Shorts & TikTok content creator.
@@ -20,7 +32,7 @@ def generate_script():
     """
     
     response = client.models.generate_content(
-        model='gemini-1.5-flash',
+        model='gemini-2.5-flash',
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -28,6 +40,6 @@ def generate_script():
     )
     
     data = json.loads(response.text)
-    print("=== Gemini English Script Generated Successfully ===")
+    print("=== English Script Generated Successfully ===")
     print("Title:", data.get("title"))
     return data
