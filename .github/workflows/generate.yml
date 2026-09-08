@@ -1,9 +1,9 @@
 name: Automatic Video Generator Engine
 
 on:
-  workflow_dispatch: # يتيح لك تشغيل الأتمتة يدوياً بزر ضغطة واحدة
+  workflow_dispatch:
   schedule:
-    - cron: '0 12 * * *' # تشغيل تلقائي يومياً الساعة 12 ظهراً
+    - cron: '0 12 * * *'
 
 jobs:
   build-and-create-video:
@@ -30,7 +30,7 @@ jobs:
 
     - name: Run Video Generator Engine
       env:
-        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       run: python generate_video.py
 
