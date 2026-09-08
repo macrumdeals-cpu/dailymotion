@@ -30,7 +30,7 @@ BLUESKY_PASSWORD = os.environ.get("BLUESKY_PASSWORD")
 
 HISTORY_FILE = "history.json"
 
-# فحص واعتماد الاتصال مع Dailymotion مبكراً (مع إضافة صلاحية التعليقات)
+# فحص واعتماد الاتصال مع Dailymotion (باستخدام الصلاحيات الرسمية المعتمدة)
 def verify_dailymotion_auth():
     cid = os.environ.get("DAILYMOTION_CLIENT_ID")
     sec = os.environ.get("DAILYMOTION_CLIENT_SECRET")
@@ -53,7 +53,7 @@ def verify_dailymotion_auth():
                 "client_secret": sec,
                 "username": username,
                 "password": password,
-                "scope": "manage_videos manage_playlists manage_comments userinfo"
+                "scope": "manage_videos manage_playlists manage_subscriptions userinfo"
             },
             headers=headers,
             timeout=15
