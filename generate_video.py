@@ -30,21 +30,40 @@ HISTORY_FILE = "history.json"
 
 # فحص واعتماد الاتصال مع Dailymotion مبكراً
 def verify_dailymotion_auth():
+    cid = (DAILYMOTION_CLIENT_ID or "").strip()
+    sec = (DAILYMOTION_CLIENT_SECRET or "").strip()
+    
+    # طباعة عدد الحروف لتأكيد وصول المفتاح من GitHub دون كشف سرك
+    print(f"🔍 فحص المتغيرات: طول Client ID = {len(cid)} | طول Client Secret = {len(sec)}")
+    
+    if len(cid) == 0 or len(sec) == 0:
+        print("❌ خطأ قاتل: أحد المفاتيح يصل فارغاً من GitHub Secrets! تحقق من أسماء المتغيرات في ملف الـ Workflow yml.")
+        return None
+
     auth_url = "https://api.dailymotion.com/oauth/token"
     auth_data = {
         "grant_type": "password",
-        "client_id": DAILYMOTION_CLIENT_ID,
-        "client_secret": DAILYMOTION_CLIENT_SECRET,
         "username": DAILYMOTION_USERNAME,
         "password": DAILYMOTION_PASSWORD,
         "scope": "manage_videos manage_playlists"
     }
+    headers = {"User-Agent": "Mozilla/5.0"}
+
     try:
-        res = requests.post(auth_url, data=auth_data, timeout=15).json()
+        # إرسال المفاتيح عبر HTTP Basic Auth المعتمد في التطبيقات الجديدة
+        res = requests.post(
+            auth_url, 
+            auth=(cid, sec), 
+            data=auth_data, 
+            headers=headers, 
+            timeout=15
+        ).json()
+        
         token = res.get("access_token")
         if not token:
-            print("❌ خطأ في المصادقة مع Dailymotion:", res)
+            print("❌ استجابة Dailymotion:", res)
             return None
+            
         print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
         return token
     except Exception as e:
