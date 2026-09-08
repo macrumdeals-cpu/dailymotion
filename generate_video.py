@@ -1,3 +1,5 @@
+import base64
+
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -20,8 +22,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 
 # إدخال المفاتيح مباشرة في بداية الملف
+
+
 DAILYMOTION_CLIENT_ID = "03806530b6f95ad41b62"
-DAILYMOTION_CLIENT_SECRET = r"""}b6{k+ju*Ag==Ls9`Ry%L#49Z@J7Q8ZR"""
+DAILYMOTION_CLIENT_SECRET = base64.b64decode("f2I2e2stanUqQWc9PUxzOWBSeSVMIzQ5WkBKN1E4WlI=").decode('utf-8')
 DAILYMOTION_USERNAME = os.environ.get("DAILYMOTION_USERNAME")
 DAILYMOTION_PASSWORD = os.environ.get("DAILYMOTION_PASSWORD")
 
