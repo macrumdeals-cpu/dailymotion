@@ -238,11 +238,11 @@ def upload_to_dailymotion(video_path, title, playlist_name):
     }
     
     missing_keys = [key for key, value in dm_keys.items() if not value]
-    
     if missing_keys:
         print(f"تنبيه: المفاتيح التالية مفقودة في Secrets: {', '.join(missing_keys)}")
         return None
 
+    # 1. طلب Token المصادقة
     auth_url = "https://api.dailymotion.com/oauth/token"
     auth_data = {
         "grant_type": "password",
@@ -254,15 +254,34 @@ def upload_to_dailymotion(video_path, title, playlist_name):
     }
     auth_res = requests.post(auth_url, data=auth_data).json()
     access_token = auth_res.get("access_token")
+    
+    if not access_token:
+        print("=== خطأ في تسجيل الدخول لـ Dailymotion ===")
+        print("استجابة الـ API:", auth_res)
+        return None
+
     headers = {"Authorization": f"Bearer {access_token}"}
 
+    # 2. طلب رابط الرفع
     url_res = requests.get("https://api.dailymotion.com/file/upload", headers=headers).json()
     upload_url = url_res.get("upload_url")
 
+    if not upload_url:
+        print("=== فشل الحصول على رابط الرفع ===")
+        print("استجابة الـ API:", url_res)
+        return None
+
+    # 3. رفع ملف الفيديو
     with open(video_path, "rb") as f:
         file_res = requests.post(upload_url, files={"file": f}).json()
     file_url = file_res.get("url")
 
+    if not file_url:
+        print("=== فشل رفع ملف الفيديو ===")
+        print("استجابة الـ API:", file_res)
+        return None
+
+    # 4. نشر الفيديو
     publish_data = {
         "url": file_url,
         "title": title[:100],
@@ -273,9 +292,16 @@ def upload_to_dailymotion(video_path, title, playlist_name):
     }
     publish_res = requests.post("https://api.dailymotion.com/me/videos", headers=headers, data=publish_data).json()
     video_id = publish_res.get("id")
+    
+    if not video_id:
+        print("=== فشل نشر الفيديو ===")
+        print("استجابة الـ API:", publish_res)
+        return None
+
     video_link = f"https://www.dailymotion.com/video/{video_id}"
     print("=== Published to Dailymotion:", video_link)
 
+    # 5. إدارة قوائم التشغيل
     try:
         user_playlists = requests.get("https://api.dailymotion.com/me/playlists", headers=headers).json().get("list", [])
         playlist_id = None
