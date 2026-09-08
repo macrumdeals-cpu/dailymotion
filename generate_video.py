@@ -30,7 +30,7 @@ BLUESKY_PASSWORD = os.environ.get("BLUESKY_PASSWORD")
 
 HISTORY_FILE = "history.json"
 
-# فحص واعتماد الاتصال مع Dailymotion (باستخدام الصلاحيات الرسمية المعتمدة)
+# فحص واعتماد الاتصال مع Dailymotion
 def verify_dailymotion_auth():
     cid = os.environ.get("DAILYMOTION_CLIENT_ID")
     sec = os.environ.get("DAILYMOTION_CLIENT_SECRET")
@@ -103,22 +103,86 @@ def save_topic_to_history(title):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-# 2. توليد السكريبت والوصف والوسوم والمنشورات بالنمط الفيروسي
+# ==========================================
+# 2. محرك جلب التريندات العالمية الحيّة
+# ==========================================
+def fetch_rss_titles(feed_url):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    try:
+        res = requests.get(feed_url, headers=headers, timeout=7)
+        titles = re.findall(r'<title>(.*?)</title>', res.text)
+        cleaned = [re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', t).strip() for t in titles]
+        return [t for t in cleaned if len(t) > 10 and "RSS" not in t and "Feed" not in t]
+    except Exception:
+        return []
+
+def fetch_from_reddit():
+    url = "https://www.reddit.com/r/todayilearned/hot.json?limit=30"
+    headers = {'User-Agent': 'python:trending.shorts.bot:v2.0'}
+    try:
+        res = requests.get(url, headers=headers, timeout=7)
+        if res.status_code == 200:
+            posts = res.json().get('data', {}).get('children', [])
+            return [p['data']['title'].replace("TIL ", "").replace("TIL that ", "") for p in posts if 'title' in p['data']]
+    except Exception:
+        pass
+    return []
+
+def fetch_from_wikipedia():
+    url = "https://en.wikipedia.org/api/rest_v1/feed/featured/today"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        res = requests.get(url, headers=headers, timeout=7).json()
+        most_read = res.get('mostread', {}).get('articles', [])
+        return [article['title'].replace("_", " ") for article in most_read if 'title' in article]
+    except Exception:
+        return []
+
+def get_strictly_new_trending_topic():
+    used_topics = get_used_topics()
+    used_topics_lower = set(t.lower().strip() for t in used_topics)
+    
+    sources = [
+        ("Google Trends RSS", lambda: fetch_rss_titles("https://trends.google.com/trends/trendingsearches/daily/rss?geo=US")),
+        ("BBC World News RSS", lambda: fetch_rss_titles("http://feeds.bbci.co.uk/news/world/rss.xml")),
+        ("TechCrunch RSS", lambda: fetch_rss_titles("https://techcrunch.com/feed/")),
+        ("Reddit TIL", fetch_from_reddit),
+        ("Wikipedia Featured", fetch_from_wikipedia)
+    ]
+    random.shuffle(sources)
+
+    for source_name, source_func in sources:
+        try:
+            print(f"🔍 Searching trends from: {source_name}...")
+            topics = source_func()
+            fresh_topics = [
+                t for t in topics 
+                if t.lower().strip() not in used_topics_lower 
+                and len(t.strip()) > 12
+                and not t.strip().isdigit()
+            ]
+            
+            if fresh_topics:
+                selected = random.choice(fresh_topics)
+                print(f"🔥 Found NEW Trending Topic from {source_name}: '{selected}'")
+                return selected
+        except Exception as e:
+            print(f"⚠️ Failed fetching from {source_name}: {e}")
+
+    print("⚠️ Fallback to default trending topic...")
+    return "Latest Breakthroughs in Global Technology and Science"
+
+# ==========================================
+# 3. توليد السكريبت والوصف بناءً على التريند
+# ==========================================
 def generate_script(top_performers=[]):
     client = genai.Client(api_key=GEMINI_API_KEY)
-    used_topics = get_used_topics()
+    
+    # جلب موضوع تريند حقيقي من المصادر العالمية
+    trending_topic = get_strictly_new_trending_topic()
     
     video_type = "LONG_SHORT"
-    
-    playlists_map = {
-        "Educational & Science": "Educational Science & Facts",
-        "Tech & Future AI": "Tech & AI Masterclass",
-        "Psychology & Human Mind": "Psychology Secrets",
-        "Money & Wealth Hacks": "Finance & Success Guides"
-    }
-    
-    selected_category = random.choice(list(playlists_map.keys()))
-    playlist_name = playlists_map[selected_category]
+    playlist_name = "Trending World News & Facts"
     
     duration_instruction = "Duration: 40 to 50 seconds (around 100-120 words). Vertical short format."
     orientation = "portrait"
@@ -128,27 +192,26 @@ def generate_script(top_performers=[]):
         analytics_context = f"Top Performing Videos on Channel: {', '.join(top_performers)}. Create content matching this engagement style."
 
     prompt = f"""
-    You are an expert viral content creator & SEO specialist skilled in YouTube Shorts and social media growth.
-    Category: {selected_category}.
+    You are an expert viral content creator & SEO specialist skilled in YouTube Shorts, Dailymotion, and social media growth.
+    Main Trending News/Topic: '{trending_topic}'.
     Video Type: {video_type}.
     {duration_instruction}
     {analytics_context}
     
     STRICT VIRAL FORMATTING RULES:
-    - DO NOT repeat any of these topics: {json.dumps(used_topics)}
-    - "title": MUST be a catchy hook with an emoji, and MUST END STRICTLY with "#shorts #viral" (Example: "Retro Tech Boom! 📱 #shorts #viral").
-    - "description": MUST start with an intriguing hook sentence (e.g., "Discover why...", "Get ready for an exhilarating journey..."), followed by a brief 2-sentence summary, and end with "👇 SUBSCRIBE for more mind-blowing content!".
-    - "bluesky_post": A short viral post (under 200 characters) starting with a exciting hook emoji, brief teaser line, and ending with hashtags "#shorts #viral #tech".
-    - "tags": Array of 8 to 12 relevant SEO tags (single words or short phrases).
+    - "title": MUST be a catchy hook with an emoji about the topic, and MUST END STRICTLY with "#shorts #viral" (Example: "Mind-Blowing Discovery! 📱 #shorts #viral").
+    - "description": MUST start with an intriguing hook sentence, followed by a brief 2-sentence summary of '{trending_topic}', and end with "👇 SUBSCRIBE for more mind-blowing content!".
+    - "bluesky_post": A short viral post (under 200 characters) starting with an exciting hook emoji, brief teaser line, and ending with hashtags "#shorts #viral #trending".
+    - "tags": Array of 8 to 12 relevant SEO tags matching this topic.
     - "script": Full engaging voiceover script (100-120 words max).
-    - "search_queries": Array of 4 English keywords for Pexels stock videos.
+    - "search_queries": Array of 4 simple English keywords matching this topic for Pexels stock videos (e.g., nature, space, technology, city).
 
     Output JSON ONLY with these exact keys:
     "title", "description", "tags", "script", "search_queries", "bluesky_post"
     """
     
     response = client.models.generate_content(
-        model='gemini-3.5-flash-lite',
+        model='gemini-2.5-flash',
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -161,11 +224,12 @@ def generate_script(top_performers=[]):
     data["orientation"] = orientation
     data["playlist_name"] = playlist_name
     
-    print(f"=== Script & SEO Data Generated | Category: {selected_category} ===")
+    print(f"=== Script Generated for Trend: {trending_topic} ===")
+    save_topic_to_history(trending_topic)
     save_topic_to_history(data.get("title"))
     return data
 
-# 3. جلب فيديوهات الخلفية من Pexels
+# 4. جلب فيديوهات الخلفية من Pexels
 def fetch_pexels_videos(queries, orientation="portrait", count_per_query=2):
     if not PEXELS_API_KEY:
         raise ValueError("PEXELS_API_KEY is missing!")
@@ -203,7 +267,7 @@ def fetch_pexels_videos(queries, orientation="portrait", count_per_query=2):
     print(f"=== Downloaded {len(downloaded_files)} background clips ===")
     return downloaded_files
 
-# 4. توليد التعليق الصوتي والترجمة
+# 5. توليد التعليق الصوتي والترجمة
 async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="subtitles.srt"):
     voice = "en-US-ChristopherNeural"
     communicate = edge_tts.Communicate(text, voice)
@@ -227,7 +291,7 @@ async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="s
         
     print("=== Audio & Subtitles Generated ===")
 
-# 5. المونتاج المحسن
+# 6. المونتاج المحسن
 def build_final_video(video_files, audio_path, orientation, output_path="final_video.mp4"):
     audio = AudioFileClip(audio_path)
     audio_duration = audio.duration
@@ -300,7 +364,7 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     subprocess.run(cmd, check=True)
     print("=== Final Video Built Successfully! ===")
 
-# 6. الرفع المباشر لـ Dailymotion وإضافة الفيديو للقائمة بمهلة معالجة
+# 7. الرفع المباشر لـ Dailymotion
 def upload_to_dailymotion(access_token, video_path, title, description, tags, playlist_name):
     if not access_token:
         return None
@@ -332,7 +396,7 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
         "description": description,
         "tags": tags_string,
         "published": "true",
-        "channel": "tech",
+        "channel": "news",
         "language": "en",
         "is_created_for_kids": "false"
     }
@@ -379,7 +443,7 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
 
     return video_link
 
-# دالة استخراج الـ Facets لتحويل أي رابط نصي إلى رابط قابل للنقر في Bluesky
+# استخراج الـ Facets لنشر روابط قابلة للنقر في Bluesky
 def extract_bluesky_facets(text):
     facets = []
     url_regex = r'(https?://[^\s]+)'
@@ -401,14 +465,14 @@ def extract_bluesky_facets(text):
         })
     return facets
 
-# 7. المشاركة على Bluesky وإرجاع الجلسة
+# 8. المشاركة على Bluesky
 def post_to_bluesky(text_content, video_url):
     if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
-        print("⚠️ تم تخطي النشر على Bluesky: متغيرات BLUESKY_HANDLE أو BLUESKY_PASSWORD غير محددة.")
+        print("⚠️ تم تخطي النشر على Bluesky: متغيرات غير محددة.")
         return None, None
         
     if not video_url:
-        print("⚠️ تم تخطي النشر على Bluesky: لا يوجد رابط فيديو للنشر.")
+        print("⚠️ تم تخطي النشر على Bluesky: لا يوجد رابط فيديو.")
         return None, None
         
     try:
@@ -459,7 +523,7 @@ def post_to_bluesky(text_content, video_url):
         print("❌ Bluesky Post Error:", e)
         return None, None
 
-# البحث عن منشورات متعلقة بالنيش على Bluesky والرد عليها
+# التفاعل الخارجي على Bluesky
 def engage_on_bluesky_niche(token, did, search_query):
     if not token or not search_query:
         return
@@ -504,7 +568,7 @@ def engage_on_bluesky_niche(token, did, search_query):
     except Exception as e:
         print("❌ Bluesky External Engagement Error:", e)
 
-# التفاعل مع قنوات وفيديوهات أخرى على Dailymotion
+# التفاعل الخارجي على Dailymotion
 def engage_on_dailymotion_niche(access_token, search_query):
     if not access_token or not search_query:
         return
@@ -546,7 +610,7 @@ def engage_on_dailymotion_niche(access_token, search_query):
     except Exception as e:
         print("❌ Dailymotion External Engagement Error:", e)
 
-# 8. التشغيل الرئيسي
+# 9. التشغيل الرئيسي
 if __name__ == "__main__":
     dm_token = verify_dailymotion_auth()
     if not dm_token:
