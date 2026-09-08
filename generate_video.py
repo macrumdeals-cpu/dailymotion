@@ -24,8 +24,7 @@ PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 # إدخال المفاتيح مباشرة في بداية الملف
 
 
-DAILYMOTION_CLIENT_ID = "03806530b6f95ad41b62"
-DAILYMOTION_CLIENT_SECRET = base64.b64decode("f2I2e2stanUqQWc9PUxzOWBSeSVMIzQ5WkBKN1E4WlI=").decode('utf-8')
+
 DAILYMOTION_USERNAME = os.environ.get("DAILYMOTION_USERNAME")
 DAILYMOTION_PASSWORD = os.environ.get("DAILYMOTION_PASSWORD")
 
