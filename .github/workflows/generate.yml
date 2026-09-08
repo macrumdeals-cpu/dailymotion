@@ -3,7 +3,8 @@ name: Automatic Video Generator Engine
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 12 * * *'
+    # 4 مواعيد ذروة يومياً لمواكبة التريندات العالمية
+    - cron: '0 7,12,16,20 * * *'
 
 jobs:
   build-and-create-video:
@@ -32,6 +33,10 @@ jobs:
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        DAILYMOTION_CLIENT_ID: ${{ secrets.DAILYMOTION_CLIENT_ID }}
+        DAILYMOTION_CLIENT_SECRET: ${{ secrets.DAILYMOTION_CLIENT_SECRET }}
+        DAILYMOTION_USERNAME: ${{ secrets.DAILYMOTION_USERNAME }}
+        DAILYMOTION_PASSWORD: ${{ secrets.DAILYMOTION_PASSWORD }}
       run: python generate_video.py
 
     - name: Save Generated Video Artifact
