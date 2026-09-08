@@ -18,8 +18,9 @@ from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 
-DAILYMOTION_CLIENT_ID = os.environ.get("DAILYMOTION_CLIENT_ID")
-DAILYMOTION_CLIENT_SECRET = os.environ.get("DAILYMOTION_CLIENT_SECRET")
+# إدخال المفاتيح مباشرة في بداية الملف
+DAILYMOTION_CLIENT_ID = "a36f58136ffcdee8e5ea"
+DAILYMOTION_CLIENT_SECRET = r"""2$Q#fkdX^uo;]9"C{P#5K\;MI-'P(Z"]"""
 DAILYMOTION_USERNAME = os.environ.get("DAILYMOTION_USERNAME")
 DAILYMOTION_PASSWORD = os.environ.get("DAILYMOTION_PASSWORD")
 
