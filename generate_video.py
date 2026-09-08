@@ -1,4 +1,5 @@
 import re
+import time
 import base64
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -300,12 +301,16 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     print("=== Final Video Built Successfully! ===")
 
 # 6. الرفع المباشر لـ Dailymotion مع الإعدادات الكاملة والوصف والوسوم
+
+
+# 6. الرفع المباشر لـ Dailymotion وإضافة الفيديو للقائمة بمهلة معالجة
 def upload_to_dailymotion(access_token, video_path, title, description, tags, playlist_name):
     if not access_token:
         return None
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
+    # 1. طلب رابط الرفع
     url_res = requests.get("https://api.dailymotion.com/file/upload", headers=headers).json()
     upload_url = url_res.get("upload_url")
 
@@ -313,6 +318,7 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
         print("=== فشل الحصول على رابط الرفع ===")
         return None
 
+    # 2. رفع ملف الفيديو
     with open(video_path, "rb") as f:
         file_res = requests.post(upload_url, files={"file": f}).json()
     file_url = file_res.get("url")
@@ -334,6 +340,7 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
         "is_created_for_kids": "false"
     }
     
+    # 3. نشر الفيديو والحصول على المعرف
     publish_res = requests.post("https://api.dailymotion.com/me/videos", headers=headers, data=publish_data).json()
     video_id = publish_res.get("id")
     
@@ -344,9 +351,15 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
     video_link = f"https://www.dailymotion.com/video/{video_id}"
     print("=== Published to Dailymotion with Full SEO Meta:", video_link)
 
+    # 4. إضافة الفيديو إلى قائمة التشغيل بعد مهلة معالجة
     try:
-        user_playlists = requests.get("https://api.dailymotion.com/me/playlists", headers=headers).json().get("list", [])
+        print("⏳ الانتظار 5 ثوانٍ لضمان تسجيل الفيديو في السيرفر...")
+        time.sleep(5)
+
+        # جلب القوائم بحد أقصى 100 قائمة
+        user_playlists = requests.get("https://api.dailymotion.com/me/playlists?limit=100", headers=headers).json().get("list", [])
         playlist_id = None
+        
         for pl in user_playlists:
             if pl.get("name") == playlist_name:
                 playlist_id = pl.get("id")
@@ -357,10 +370,16 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
             playlist_id = new_pl.get("id")
 
         if playlist_id:
-            requests.post(f"https://api.dailymotion.com/playlist/{playlist_id}/videos", headers=headers, data={"videoid": video_id})
-            print(f"=== Added Video to Playlist: {playlist_name} ===")
+            add_url = f"https://api.dailymotion.com/playlist/{playlist_id}/videos"
+            pl_res = requests.post(add_url, headers=headers, data={"videoid": video_id})
+            
+            if pl_res.status_code in [200, 201]:
+                print(f"=== Added Video ({video_id}) to Playlist: {playlist_name} Successfully! ===")
+            else:
+                print(f"❌ فشل إضافة الفيديو للقائمة: {pl_res.text}")
+
     except Exception as e:
-        print("Playlist Error:", e)
+        print("❌ Playlist Error:", e)
 
     return video_link
 
@@ -451,6 +470,104 @@ def post_to_bluesky(text_content, video_url):
 
 
 
+# البحث عن منشورات متعلقة بالنيش على Bluesky والرد عليها
+def engage_on_bluesky_niche(token, did, search_query):
+    if not token or not search_query:
+        return
+        
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        # 1. البحث عن منشورات حديثة باستخدام الكلمة المفتاحية
+        search_url = f"https://bsky.social/xrpc/app.bsky.feed.searchPosts?q={search_query}&limit=3"
+        res = requests.get(search_url, headers=headers, timeout=15).json()
+        posts = res.get("posts", [])
+        
+        replies_pool = [
+            "Totally agree! This topic is evolving so fast lately. 💡",
+            "Interesting perspective! Thanks for starting this discussion. 🔥",
+            "Spot on! Just covered something very similar today. 👌"
+        ]
+        
+        for post in posts:
+            post_uri = post.get("uri")
+            post_cid = post.get("cid")
+            
+            # تجنب الرد على منشوراتك الشخصية
+            if post.get("author", {}).get("did") == did:
+                continue
+                
+            reply_text = random.choice(replies_pool)
+            payload = {
+                "repo": did,
+                "collection": "app.bsky.feed.post",
+                "record": {
+                    "$type": "app.bsky.feed.post",
+                    "text": reply_text,
+                    "reply": {
+                        "root": {"uri": post_uri, "cid": post_cid},
+                        "parent": {"uri": post_uri, "cid": post_cid}
+                    },
+                    "createdAt": datetime.utcnow().isoformat() + "Z"
+                }
+            }
+            requests.post("https://bsky.social/xrpc/com.atproto.repo.createRecord", headers=headers, json=payload, timeout=15)
+            time.sleep(3)
+            
+        print(f"=== Engaged with {len(posts)} external posts on Bluesky! ===")
+    except Exception as e:
+        print("❌ Bluesky External Engagement Error:", e)
+
+
+
+
+
+# التفاعل مع قنوات وفيديوهات أخرى على Dailymotion
+def engage_on_dailymotion_niche(access_token, search_query):
+    if not access_token or not search_query:
+        return
+        
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        # 1. البحث عن فيديوهات متعلقة بالموضوع
+        search_url = f"https://api.dailymotion.com/videos?search={search_query}&fields=id,owner,title&limit=3&sort=relevance"
+        res = requests.get(search_url, headers=headers, timeout=15).json()
+        videos = res.get("list", [])
+        
+        comments_pool = [
+            "Great insights! Thanks for sharing this breakdown. 👏",
+            "Awesome content! Really enjoyed watching this topic. 🔥",
+            "Very well explained! Keep up the great work! ✨"
+        ]
+        
+        for vid in videos:
+            vid_id = vid.get("id")
+            owner_id = vid.get("owner")
+            
+            # أ) إضافة تعليق على فيديو المنافس
+            comment_text = random.choice(comments_pool)
+            requests.post(
+                f"https://api.dailymotion.com/video/{vid_id}/comments",
+                headers=headers,
+                data={"message": comment_text},
+                timeout=15
+            )
+            
+            # ب) متابعة قناة المنافس
+            if owner_id:
+                requests.post(
+                    f"https://api.dailymotion.com/me/following/{owner_id}",
+                    headers=headers,
+                    timeout=15
+                )
+                
+            time.sleep(2) # مهلة زمنية لتجنب الحظر
+            
+        print(f"=== Engaged with {len(videos)} external Dailymotion channels in niche! ===")
+    except Exception as e:
+        print("❌ Dailymotion External Engagement Error:", e)
+
+
+
 # 8. التشغيل الرئيسي
 if __name__ == "__main__":
     dm_token = verify_dailymotion_auth()
@@ -475,3 +592,11 @@ if __name__ == "__main__":
     
     if video_url:
         post_to_bluesky(script_data["bluesky_post"], video_url)
+    if video_url:
+            main_keyword = script_data.get("search_queries", ["tech"])[0]
+            
+            # 1. التفاعل الخارجي على Dailymotion (تعليقات ومتابعة)
+            engage_on_dailymotion_niche(dm_token, main_keyword)
+            
+            # 2. التفاعل الخارجي على Bluesky (الرد على منشورات الآخرين)
+            # يمكنك استخراج token و did من دالة تسجيل دخول Bluesky وتمريرها هنا
