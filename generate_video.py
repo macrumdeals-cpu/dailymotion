@@ -30,7 +30,7 @@ def generate_script():
        - "search_queries": مصفوفة تحتوي على 3 كلمات مفتاحية بالإنجليزية لسحب الفيديوهات (مثل: ["dark space", "technology", "cyberpunk"])
     """
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="qwen/qwen3.6-27b",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": "اكتب لي فيديو عن حقيقة مذهلة وغير معروفة عن التكنولوجيا أو المستقبل."}
