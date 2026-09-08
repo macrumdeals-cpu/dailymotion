@@ -28,6 +28,45 @@ BLUESKY_PASSWORD = os.environ.get("BLUESKY_PASSWORD")
 
 HISTORY_FILE = "history.json"
 
+# فحص واعتماد الاتصال مع Dailymotion مبكراً
+def verify_dailymotion_auth():
+    auth_url = "https://api.dailymotion.com/oauth/token"
+    auth_data = {
+        "grant_type": "password",
+        "client_id": DAILYMOTION_CLIENT_ID,
+        "client_secret": DAILYMOTION_CLIENT_SECRET,
+        "username": DAILYMOTION_USERNAME,
+        "password": DAILYMOTION_PASSWORD,
+        "scope": "manage_videos manage_playlists"
+    }
+    try:
+        res = requests.post(auth_url, data=auth_data, timeout=15).json()
+        token = res.get("access_token")
+        if not token:
+            print("❌ خطأ في المصادقة مع Dailymotion:", res)
+            return None
+        print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
+        return token
+    except Exception as e:
+        print("❌ فشل الاتصال مع Dailymotion:", e)
+        return None
+
+# جلب أفضل الفيديوهات أداءً على القناة لربط السكريبت بها
+def fetch_top_performing_videos(access_token):
+    if not access_token:
+        return []
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        url = "https://api.dailymotion.com/me/videos?fields=title,views&sort=visited&limit=5"
+        res = requests.get(url, headers=headers, timeout=15).json()
+        videos = res.get("list", [])
+        performers = [f"'{v.get('title')}' ({v.get('views', 0)} views)" for v in videos if v.get("title")]
+        print(f"📊 تم تحليل أداء القناة: العثور على {len(performers)} فيديو عالي المشاهدة.")
+        return performers
+    except Exception as e:
+        print("⚠️ تعذر جلب تحليلات القناة:", e)
+        return []
+
 def get_used_topics():
     if os.path.exists(HISTORY_FILE):
         try:
@@ -45,11 +84,11 @@ def save_topic_to_history(title):
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 # 2. توليد السكريبت
-def generate_script():
+def generate_script(top_performers=[]):
     client = genai.Client(api_key=GEMINI_API_KEY)
     used_topics = get_used_topics()
     
-    video_type = random.choice(["LONG_SHORT", "STANDARD_VIDEO"])
+    video_type = "LONG_SHORT"  # التثبيت على نظام الفيديوهات القصيرة الخفيفة والسريعة
     
     playlists_map = {
         "Educational & Science": "Educational Science & Facts",
@@ -61,25 +100,26 @@ def generate_script():
     selected_category = random.choice(list(playlists_map.keys()))
     playlist_name = playlists_map[selected_category]
     
-    if video_type == "LONG_SHORT":
-        duration_instruction = "Duration: 55 to 60 seconds (around 140-150 words). Format is vertical short."
-        orientation = "portrait"
-    else:
-        duration_instruction = "Duration: 90 to 120 seconds (around 220-250 words). Format is standard horizontal educational video."
-        orientation = "landscape"
+    duration_instruction = "Duration: 40 to 50 seconds (around 100-120 words). Vertical short format."
+    orientation = "portrait"
+
+    analytics_context = ""
+    if top_performers:
+        analytics_context = f"Top Performing Videos on Channel: {', '.join(top_performers)}. Create a script that matches the high-engagement style and topics of these successful videos."
 
     prompt = f"""
-    You are an expert viral content creator and educator.
+    You are an expert viral content creator.
     Category: {selected_category}.
     Video Type: {video_type}.
     {duration_instruction}
+    {analytics_context}
     
     STRICT RULES:
     - DO NOT repeat any of these topics: {json.dumps(used_topics)}
     - High retention educational hook in the first 3 seconds.
     - Output JSON ONLY with these exact keys:
        - "title": Video Title (Catchy, SEO friendly)
-       - "script": Full engaging voiceover script
+       - "script": Full engaging voiceover script (around 100-120 words max)
        - "search_queries": Array of 4 English keywords for stock videos
        - "bluesky_post": Short viral post for Bluesky with hashtags
     """
@@ -98,7 +138,7 @@ def generate_script():
     data["orientation"] = orientation
     data["playlist_name"] = playlist_name
     
-    print(f"=== Script Generated | Type: {video_type} | Category: {selected_category} ===")
+    print(f"=== Script Generated | Category: {selected_category} ===")
     save_topic_to_history(data.get("title"))
     return data
 
@@ -112,7 +152,7 @@ def fetch_pexels_videos(queries, orientation="portrait", count_per_query=2):
 
     for query in queries:
         url = f"https://api.pexels.com/videos/search?query={query}&orientation={orientation}&per_page={count_per_query}"
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
@@ -124,7 +164,7 @@ def fetch_pexels_videos(queries, orientation="portrait", count_per_query=2):
                     video_url = video_files[0].get("link")
                     file_name = f"bg_video_{len(downloaded_files)}.mp4"
                     
-                    res = requests.get(video_url, stream=True)
+                    res = requests.get(video_url, stream=True, timeout=15)
                     with open(file_name, "wb") as f:
                         for chunk in res.iter_content(chunk_size=1024 * 1024):
                             if chunk:
@@ -137,7 +177,7 @@ def fetch_pexels_videos(queries, orientation="portrait", count_per_query=2):
     if not downloaded_files:
         raise Exception("Failed to download videos from Pexels!")
 
-    print(f"=== Downloaded {len(downloaded_files)} videos from Pexels ===")
+    print(f"=== Downloaded {len(downloaded_files)} background clips ===")
     return downloaded_files
 
 # 4. توليد التعليق الصوتي والترجمة
@@ -154,7 +194,6 @@ async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="s
                 submaker.feed(chunk)
                 
     srt_content = submaker.get_srt()
-    
     if not srt_content or not srt_content.strip():
         srt_content = f"1\n00:00:00,000 --> 00:01:00,000\n{text}\n"
         
@@ -163,14 +202,14 @@ async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="s
         file.flush()
         os.fsync(file.fileno())
         
-    print("=== Audio & Subtitles Generated Successfully ===")
+    print("=== Audio & Subtitles Generated ===")
 
-# 5. المونتاج وتطبيق الترجمة
+# 5. المونتاج المحسن بدون إغراق سجلات السطور
 def build_final_video(video_files, audio_path, orientation, output_path="final_video.mp4"):
     audio = AudioFileClip(audio_path)
     audio_duration = audio.duration
     
-    target_w, target_h = (1080, 1920) if orientation == "portrait" else (1920, 1080)
+    target_w, target_h = (1080, 1920)
     
     clips = []
     clip_duration = 3.0
@@ -199,16 +238,28 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     final_clip = final_clip.set_audio(audio)
     
     temp_output = "temp_video.mp4"
-    final_clip.write_videofile(temp_output, fps=30, codec="libx264", audio_codec="aac")
     
-    margin_v = 140 if orientation == "portrait" else 60
-    font_size = 20 if orientation == "portrait" else 16
+    # تصدير الفيديو بهدوء ودون إغراق السجل بالسطور
+    print("=== Processing Video Render (Please wait)... ===")
+    final_clip.write_videofile(
+        temp_output,
+        fps=24,
+        codec="libx264",
+        audio_codec="aac",
+        threads=1,
+        preset="ultrafast",
+        verbose=False,
+        logger=None
+    )
     
+    margin_v = 180
+    font_size = 22
     srt_file = "subtitles.srt"
     has_valid_subtitles = os.path.exists(srt_file) and os.path.getsize(srt_file) > 0
     
+    # إخراج ترجمة واضحة ومحترفة في الثلث السفلي من الشاشة
     if has_valid_subtitles:
-        subtitle_filter = f"subtitles={srt_file}:force_style='FontSize={font_size},FontName=Arial,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v}'"
+        subtitle_filter = f"subtitles={srt_file}:force_style='FontSize={font_size},FontName=Arial,Bold=1,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v},Alignment=2'"
         cmd = [
             "ffmpeg", "-y",
             "-i", temp_output,
@@ -228,64 +279,32 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     subprocess.run(cmd, check=True)
     print("=== Final Video Built Successfully! ===")
 
-# 6. الرفع على Dailymotion وإدارته داخل البلاي ليست
-def upload_to_dailymotion(video_path, title, playlist_name):
-    dm_keys = {
-        "DAILYMOTION_CLIENT_ID": DAILYMOTION_CLIENT_ID,
-        "DAILYMOTION_CLIENT_SECRET": DAILYMOTION_CLIENT_SECRET,
-        "DAILYMOTION_USERNAME": DAILYMOTION_USERNAME,
-        "DAILYMOTION_PASSWORD": DAILYMOTION_PASSWORD,
-    }
-    
-    missing_keys = [key for key, value in dm_keys.items() if not value]
-    if missing_keys:
-        print(f"تنبيه: المفاتيح التالية مفقودة في Secrets: {', '.join(missing_keys)}")
-        return None
-
-    # 1. طلب Token المصادقة
-    auth_url = "https://api.dailymotion.com/oauth/token"
-    auth_data = {
-        "grant_type": "password",
-        "client_id": DAILYMOTION_CLIENT_ID,
-        "client_secret": DAILYMOTION_CLIENT_SECRET,
-        "username": DAILYMOTION_USERNAME,
-        "password": DAILYMOTION_PASSWORD,
-        "scope": "manage_videos manage_playlists"
-    }
-    auth_res = requests.post(auth_url, data=auth_data).json()
-    access_token = auth_res.get("access_token")
-    
+# 6. الرفع المباشر لـ Dailymotion
+def upload_to_dailymotion(access_token, video_path, title, playlist_name):
     if not access_token:
-        print("=== خطأ في تسجيل الدخول لـ Dailymotion ===")
-        print("استجابة الـ API:", auth_res)
         return None
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # 2. طلب رابط الرفع
     url_res = requests.get("https://api.dailymotion.com/file/upload", headers=headers).json()
     upload_url = url_res.get("upload_url")
 
     if not upload_url:
         print("=== فشل الحصول على رابط الرفع ===")
-        print("استجابة الـ API:", url_res)
         return None
 
-    # 3. رفع ملف الفيديو
     with open(video_path, "rb") as f:
         file_res = requests.post(upload_url, files={"file": f}).json()
     file_url = file_res.get("url")
 
     if not file_url:
-        print("=== فشل رفع ملف الفيديو ===")
-        print("استجابة الـ API:", file_res)
+        print("=== فشل رفع الملف ===")
         return None
 
-    # 4. نشر الفيديو
     publish_data = {
         "url": file_url,
         "title": title[:100],
-        "tags": "education,facts,shorts,learning,viral",
+        "tags": "education,facts,shorts,viral",
         "published": "true",
         "channel": "tech",
         "is_created_for_kids": "false"
@@ -295,13 +314,11 @@ def upload_to_dailymotion(video_path, title, playlist_name):
     
     if not video_id:
         print("=== فشل نشر الفيديو ===")
-        print("استجابة الـ API:", publish_res)
         return None
 
     video_link = f"https://www.dailymotion.com/video/{video_id}"
     print("=== Published to Dailymotion:", video_link)
 
-    # 5. إدارة قوائم التشغيل
     try:
         user_playlists = requests.get("https://api.dailymotion.com/me/playlists", headers=headers).json().get("list", [])
         playlist_id = None
@@ -322,7 +339,7 @@ def upload_to_dailymotion(video_path, title, playlist_name):
 
     return video_link
 
-# 7. المشاركة التلقائية على Bluesky
+# 7. المشاركة على Bluesky
 def post_to_bluesky(text_content, video_url):
     if not BLUESKY_HANDLE or not BLUESKY_PASSWORD or not video_url:
         return
@@ -330,13 +347,14 @@ def post_to_bluesky(text_content, video_url):
     try:
         session_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.server.createSession",
-            json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_PASSWORD}
+            json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_PASSWORD},
+            timeout=15
         ).json()
         
         token = session_res.get("accessJwt")
         did = session_res.get("did")
         
-        post_text = f"{text_content}\n\nWatch full video here: {video_url}"
+        post_text = f"{text_content}\n\nWatch video: {video_url}"
         
         headers = {"Authorization": f"Bearer {token}"}
         payload = {
@@ -349,19 +367,28 @@ def post_to_bluesky(text_content, video_url):
             }
         }
         
-        # تصحيح رابط الطلب إلى Bluesky بدلاً من Dailymotion
-        res = requests.post("https://bsky.social/xrpc/com.atproto.repo.createRecord", headers=headers, json=payload)
+        requests.post("https://bsky.social/xrpc/com.atproto.repo.createRecord", headers=headers, json=payload, timeout=15)
         print("=== Shared Successfully to Bluesky! ===")
     except Exception as e:
         print("Bluesky Post Error:", e)
 
 # 8. التشغيل الرئيسي
 if __name__ == "__main__":
-    script_data = generate_script()
+    # 1. فحص الاتصال بـ Dailymotion أولاً
+    dm_token = verify_dailymotion_auth()
+    if not dm_token:
+        raise Exception("إيقاف التشغيل: تعذر الاتصال بـ Dailymotion. يرجي مراجعة Secrets.")
+
+    # 2. تحليل الأداء السابق للقناة
+    top_videos = fetch_top_performing_videos(dm_token)
+
+    # 3. توليد وبناء الفيديو
+    script_data = generate_script(top_performers=top_videos)
     asyncio.run(generate_audio_and_subtitles(script_data["script"]))
     bg_files = fetch_pexels_videos(script_data["search_queries"], script_data["orientation"])
     build_final_video(bg_files, "audio.mp3", script_data["orientation"], "final_video.mp4")
     
-    video_url = upload_to_dailymotion("final_video.mp4", script_data["title"], script_data["playlist_name"])
+    # 4. الرفع والنشر
+    video_url = upload_to_dailymotion(dm_token, "final_video.mp4", script_data["title"], script_data["playlist_name"])
     if video_url:
         post_to_bluesky(script_data["bluesky_post"], video_url)
