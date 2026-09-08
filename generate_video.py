@@ -43,3 +43,12 @@ def generate_script():
     print("=== English Script Generated Successfully ===")
     print("Title:", data.get("title"))
     return data
+# -------------------------------------------------------------
+# نقطة التشغيل الرئيسية (مهمة جداً لبدء التنفيذ)
+# -------------------------------------------------------------
+if __name__ == "__main__":
+    print("=== Starting Video Generation Pipeline ===")
+    script_data = generate_script()
+    asyncio.run(generate_audio_and_subtitles(script_data["script"]))
+    bg_files = fetch_pexels_videos(script_data["search_queries"])
+    build_final_video(bg_files, "audio.mp3", "final_video.mp4")
