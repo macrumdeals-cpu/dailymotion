@@ -42,7 +42,7 @@ def verify_dailymotion_auth():
     auth_url = "https://api.dailymotion.com/oauth/token"
     headers = {"User-Agent": "Mozilla/5.0"}
     
-    # المحاولة الأولى: POST Body
+    # المحاولة الأساسية: إرسال جميع البيانات مباشرة في POST Body
     payload = {
         "grant_type": "client_credentials",
         "client_id": cid,
@@ -54,27 +54,36 @@ def verify_dailymotion_auth():
         res = requests.post(auth_url, data=payload, headers=headers, timeout=15).json()
         token = res.get("access_token")
         
-        # المحاولة الثانية: Basic Auth للتعامل مع الرموز الخاصة
-        if not token:
-            res = requests.post(
-                auth_url, 
-                auth=(cid, sec), 
-                data={"grant_type": "client_credentials", "scope": "manage_videos manage_playlists"}, 
-                headers=headers, 
-                timeout=15
-            ).json()
-            token = res.get("access_token")
-
-        if not token:
-            print("❌ استجابة Dailymotion:", res)
-            return None
+        if token:
+            print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
+            return token
             
-        print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
-        return token
+        print("⚠️ المحاولة الأولى لم تنجح، استجابة Dailymotion:", res)
+        
+        # المحاولة الاحتياطية: تضمين client_id في Body مع استخدام Basic Auth
+        res_backup = requests.post(
+            auth_url, 
+            auth=(cid, sec), 
+            data={
+                "grant_type": "client_credentials", 
+                "client_id": cid,
+                "scope": "manage_videos manage_playlists"
+            }, 
+            headers=headers, 
+            timeout=15
+        ).json()
+        
+        token = res_backup.get("access_token")
+        if token:
+            print("✅ تم التحقق عبر المحاولة الاحتياطية بنجاح!")
+            return token
+            
+        print("❌ استجابة المحاولة الاحتياطية:", res_backup)
+        return None
+
     except Exception as e:
         print("❌ فشل الاتصال مع Dailymotion:", e)
         return None
-
 # جلب أفضل الفيديوهات أداءً على القناة لربط السكريبت بها
 def fetch_top_performing_videos(access_token):
     if not access_token:
