@@ -146,7 +146,7 @@ def fetch_pexels_videos(queries, orientation, target_count=8):
             
     return downloaded_files
 
-# 5. المونتاج وتكييف الأبعاد
+# 5. المونتاج وتكييف الأبعاد وتطبيق الترجمة
 def build_final_video(video_files, audio_path, orientation, output_path="final_video.mp4"):
     audio = AudioFileClip(audio_path)
     audio_duration = audio.duration
@@ -185,12 +185,19 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     margin_v = 140 if orientation == "portrait" else 60
     font_size = 20 if orientation == "portrait" else 16
     
-    cmd = (
-        f'ffmpeg -y -i {temp_output} -vf '
-        f'"subtitles=subtitles.srt:force_style=\'FontSize={font_size},FontName=Arial,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v}\''
-        f' -c:a copy {output_path}'
-    )
-    subprocess.run(cmd, shell=True)
+    # فلتر الترجمة بنظام القائمة الآمن لسيرفرات لينكس
+    subtitle_filter = f"subtitles=subtitles.srt:force_style='FontSize={font_size},FontName=Arial,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v}'"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", temp_output,
+        "-vf", subtitle_filter,
+        "-c:a", "copy",
+        output_path
+    ]
+    
+    subprocess.run(cmd, check=True)
+    print("=== Final Video Built Successfully! ===")
 
 # 6. الرفع على Dailymotion وإدارته داخل البلاي ليست
 def upload_to_dailymotion(video_path, title, playlist_name):
