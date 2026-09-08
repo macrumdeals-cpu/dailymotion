@@ -103,7 +103,7 @@ def generate_script():
     save_topic_to_history(data.get("title"))
     return data
 
-# 3. توليد الصوت والترجمة
+# 4. توليد التعليق الصوتي والترجمة مع حماية من الملفات الفارغة
 async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="subtitles.srt"):
     voice = "en-US-ChristopherNeural"
     communicate = edge_tts.Communicate(text, voice)
@@ -116,37 +116,20 @@ async def generate_audio_and_subtitles(text, audio_path="audio.mp3", srt_path="s
             elif chunk["type"] == "WordBoundary":
                 submaker.feed(chunk)
                 
-    with open(srt_path, "w", encoding="utf-8") as file:
-        file.write(submaker.get_srt())
-
-# 4. جلب الخلفيات بناءً على الأبعاد (رأسي أم أفقي)
-def fetch_pexels_videos(queries, orientation, target_count=8):
-    headers = {"Authorization": PEXELS_API_KEY}
-    downloaded_files = []
+    srt_content = submaker.get_srt()
     
-    for query in queries:
-        url = f"https://api.pexels.com/videos/search?query={query}&per_page=4&orientation={orientation}"
-        res = requests.get(url, headers=headers).json()
-        videos = res.get("videos", [])
+    # حماية: إنشاء نص ترجمة تلقائي إذا لم يتم إرجاع حدود الكلمات
+    if not srt_content or not srt_content.strip():
+        srt_content = f"1\n00:00:00,000 --> 00:01:00,000\n{text}\n"
         
-        for vid in videos:
-            video_files = vid.get("video_files", [])
-            best_file = video_files[0]["link"] if video_files else None
-            
-            if best_file:
-                file_path = f"bg_{len(downloaded_files)}.mp4"
-                v_data = requests.get(best_file).content
-                with open(file_path, "wb") as f:
-                    f.write(v_data)
-                downloaded_files.append(file_path)
-                if len(downloaded_files) >= target_count:
-                    break
-        if len(downloaded_files) >= target_count:
-            break
-            
-    return downloaded_files
+    with open(srt_path, "w", encoding="utf-8") as file:
+        file.write(srt_content)
+        file.flush()
+        os.fsync(file.fileno())
+        
+    print("=== Audio & Subtitles Generated Successfully ===")
 
-# 5. المونتاج وتكييف الأبعاد وتطبيق الترجمة
+# 5. المونتاج وتكييف الأبعاد وتطبيق الترجمة مع فحص وجود ملف الترجمة
 def build_final_video(video_files, audio_path, orientation, output_path="final_video.mp4"):
     audio = AudioFileClip(audio_path)
     audio_duration = audio.duration
@@ -185,17 +168,28 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     margin_v = 140 if orientation == "portrait" else 60
     font_size = 20 if orientation == "portrait" else 16
     
-    # فلتر الترجمة بنظام القائمة الآمن لسيرفرات لينكس
-    subtitle_filter = f"subtitles=subtitles.srt:force_style='FontSize={font_size},FontName=Arial,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v}'"
+    # فحص وجود وصحة ملف الترجمة قبل تمريره لـ FFmpeg
+    srt_file = "subtitles.srt"
+    has_valid_subtitles = os.path.exists(srt_file) and os.path.getsize(srt_file) > 0
     
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", temp_output,
-        "-vf", subtitle_filter,
-        "-c:a", "copy",
-        output_path
-    ]
-    
+    if has_valid_subtitles:
+        subtitle_filter = f"subtitles={srt_file}:force_style='FontSize={font_size},FontName=Arial,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v}'"
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", temp_output,
+            "-vf", subtitle_filter,
+            "-c:a", "copy",
+            output_path
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", temp_output,
+            "-c:v", "copy",
+            "-c:a", "copy",
+            output_path
+        ]
+        
     subprocess.run(cmd, check=True)
     print("=== Final Video Built Successfully! ===")
 
