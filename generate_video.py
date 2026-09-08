@@ -101,7 +101,7 @@ def save_topic_to_history(title):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-# 2. توليد السكريبت والوصف والوسوم تلقائياً
+# 2. توليد السكريبت والوصف والوسوم والمنشورات بالنمط الفيروسي
 def generate_script(top_performers=[]):
     client = genai.Client(api_key=GEMINI_API_KEY)
     used_topics = get_used_topics()
@@ -123,25 +123,26 @@ def generate_script(top_performers=[]):
 
     analytics_context = ""
     if top_performers:
-        analytics_context = f"Top Performing Videos on Channel: {', '.join(top_performers)}. Create content that matches this high engagement style."
+        analytics_context = f"Top Performing Videos on Channel: {', '.join(top_performers)}. Create content matching this engagement style."
 
     prompt = f"""
-    You are an expert viral content creator & SEO specialist.
+    You are an expert viral content creator & SEO specialist skilled in YouTube Shorts and social media growth.
     Category: {selected_category}.
     Video Type: {video_type}.
     {duration_instruction}
     {analytics_context}
     
-    STRICT RULES:
+    STRICT VIRAL FORMATTING RULES:
     - DO NOT repeat any of these topics: {json.dumps(used_topics)}
-    - High retention educational hook in the first 3 seconds.
-    - Output JSON ONLY with these exact keys:
-       - "title": Video Title (Catchy, SEO optimized, under 90 characters)
-       - "description": Complete viral YouTube/Dailymotion SEO description with summary, key takeaways, hashtags, and call to action (150-250 words)
-       - "tags": Array of 8 to 12 relevant SEO tag strings (single words or short phrases)
-       - "script": Full engaging voiceover script (around 100-120 words max)
-       - "search_queries": Array of 4 English keywords for Pexels stock videos
-       - "bluesky_post": Short viral post for Bluesky with hashtags
+    - "title": MUST be a catchy hook with an emoji, and MUST END STRICTLY with "#shorts #viral" (Example: "Retro Tech Boom! 📱 #shorts #viral").
+    - "description": MUST start with an intriguing hook sentence (e.g., "Discover why...", "Get ready for an exhilarating journey..."), followed by a brief 2-sentence summary, and end with "👇 SUBSCRIBE for more mind-blowing content!".
+    - "bluesky_post": A short viral post (under 200 characters) starting with a exciting hook emoji, brief teaser line, and ending with hashtags "#shorts #viral #tech".
+    - "tags": Array of 8 to 12 relevant SEO tags (single words or short phrases).
+    - "script": Full engaging voiceover script (100-120 words max).
+    - "search_queries": Array of 4 English keywords for Pexels stock videos.
+
+    Output JSON ONLY with these exact keys:
+    "title", "description", "tags", "script", "search_queries", "bluesky_post"
     """
     
     response = client.models.generate_content(
@@ -319,7 +320,6 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
         print("=== فشل رفع الملف ===")
         return None
 
-    # تحويل قائمة الوسوم إلى سلسلة نصية مفصولة بفواصل
     tags_string = ",".join(tags) if isinstance(tags, list) else str(tags)
 
     publish_data = {
@@ -343,7 +343,6 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
     video_link = f"https://www.dailymotion.com/video/{video_id}"
     print("=== Published to Dailymotion with Full SEO Meta:", video_link)
 
-    # إضافة الفيديو للقائمة
     try:
         user_playlists = requests.get("https://api.dailymotion.com/me/playlists", headers=headers).json().get("list", [])
         playlist_id = None
@@ -364,8 +363,7 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
 
     return video_link
 
-# 7. المشاركة على Bluesky
-# 7. المشاركة على Bluesky مع كشف الأخطاء
+# 7. المشاركة على Bluesky مع طباعة التفاصيل والأخطاء
 def post_to_bluesky(text_content, video_url):
     if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
         print("⚠️ تم تخطي النشر على Bluesky: متغيرات BLUESKY_HANDLE أو BLUESKY_PASSWORD غير محددة في GitHub Secrets.")
@@ -376,7 +374,6 @@ def post_to_bluesky(text_content, video_url):
         return
         
     try:
-        # 1. تسجيل الدخول واختبار الاعتماد
         session_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.server.createSession",
             json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_PASSWORD},
@@ -391,7 +388,7 @@ def post_to_bluesky(text_content, video_url):
         token = session_data.get("accessJwt")
         did = session_data.get("did")
         
-        post_text = f"{text_content}\n\nWatch video: {video_url}"
+        post_text = f"{text_content}\n\n🎬 Watch Video: {video_url}"
         
         headers = {"Authorization": f"Bearer {token}"}
         payload = {
@@ -404,7 +401,6 @@ def post_to_bluesky(text_content, video_url):
             }
         }
         
-        # 2. إنشاء المنشور
         post_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.repo.createRecord",
             headers=headers,
@@ -422,21 +418,17 @@ def post_to_bluesky(text_content, video_url):
 
 # 8. التشغيل الرئيسي
 if __name__ == "__main__":
-    # 1. فحص الاتصال بـ Dailymotion أولاً
     dm_token = verify_dailymotion_auth()
     if not dm_token:
         raise Exception("إيقاف التشغيل: تعذر الاتصال بـ Dailymotion. يرجي مراجعة Secrets.")
 
-    # 2. تحليل الأداء السابق للقناة
     top_videos = fetch_top_performing_videos(dm_token)
 
-    # 3. توليد وبناء الفيديو
     script_data = generate_script(top_performers=top_videos)
     asyncio.run(generate_audio_and_subtitles(script_data["script"]))
     bg_files = fetch_pexels_videos(script_data["search_queries"], script_data["orientation"])
     build_final_video(bg_files, "audio.mp3", script_data["orientation"], "final_video.mp4")
     
-    # 4. الرفع والنشر المكتمل بالإعدادات والوصف والوسوم
     video_url = upload_to_dailymotion(
         dm_token,
         "final_video.mp4",
