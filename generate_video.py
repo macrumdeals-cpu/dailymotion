@@ -40,9 +40,10 @@ def verify_dailymotion_auth():
         return None
 
     auth_url = "https://api.dailymotion.com/oauth/token"
+    headers = {"User-Agent": "Mozilla/5.0"}
     
-    # استخدام نظام client_credentials المخصص لمفاتيح Studio
-    auth_data = {
+    # المحاولة الأولى: POST Body
+    payload = {
         "grant_type": "client_credentials",
         "client_id": cid,
         "client_secret": sec,
@@ -50,11 +51,22 @@ def verify_dailymotion_auth():
     }
 
     try:
-        res = requests.post(auth_url, data=auth_data, timeout=15).json()
+        res = requests.post(auth_url, data=payload, headers=headers, timeout=15).json()
         token = res.get("access_token")
         
+        # المحاولة الثانية: Basic Auth للتعامل مع الرموز الخاصة
         if not token:
-            print("❌ استجابة Dailymotion عند الاتصال:", res)
+            res = requests.post(
+                auth_url, 
+                auth=(cid, sec), 
+                data={"grant_type": "client_credentials", "scope": "manage_videos manage_playlists"}, 
+                headers=headers, 
+                timeout=15
+            ).json()
+            token = res.get("access_token")
+
+        if not token:
+            print("❌ استجابة Dailymotion:", res)
             return None
             
         print("✅ تم التحقق من اتصال Dailymotion بنجاح!")
