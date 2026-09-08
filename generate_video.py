@@ -30,7 +30,7 @@ BLUESKY_PASSWORD = os.environ.get("BLUESKY_PASSWORD")
 
 HISTORY_FILE = "history.json"
 
-# فحص واعتماد الاتصال مع Dailymotion مبكراً
+# فحص واعتماد الاتصال مع Dailymotion مبكراً (مع إضافة صلاحية التعليقات)
 def verify_dailymotion_auth():
     cid = os.environ.get("DAILYMOTION_CLIENT_ID")
     sec = os.environ.get("DAILYMOTION_CLIENT_SECRET")
@@ -53,7 +53,7 @@ def verify_dailymotion_auth():
                 "client_secret": sec,
                 "username": username,
                 "password": password,
-                "scope": "manage_videos manage_playlists userinfo"
+                "scope": "manage_videos manage_playlists manage_comments userinfo"
             },
             headers=headers,
             timeout=15
@@ -300,9 +300,6 @@ def build_final_video(video_files, audio_path, orientation, output_path="final_v
     subprocess.run(cmd, check=True)
     print("=== Final Video Built Successfully! ===")
 
-# 6. الرفع المباشر لـ Dailymotion مع الإعدادات الكاملة والوصف والوسوم
-
-
 # 6. الرفع المباشر لـ Dailymotion وإضافة الفيديو للقائمة بمهلة معالجة
 def upload_to_dailymotion(access_token, video_path, title, description, tags, playlist_name):
     if not access_token:
@@ -356,7 +353,6 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
         print("⏳ الانتظار 5 ثوانٍ لضمان تسجيل الفيديو في السيرفر...")
         time.sleep(5)
 
-        # جلب القوائم بحد أقصى 100 قائمة
         user_playlists = requests.get("https://api.dailymotion.com/me/playlists?limit=100", headers=headers).json().get("list", [])
         playlist_id = None
         
@@ -383,9 +379,6 @@ def upload_to_dailymotion(access_token, video_path, title, description, tags, pl
 
     return video_link
 
-# 7. المشاركة على Bluesky مع طباعة التفاصيل والأخطاء
-
-
 # دالة استخراج الـ Facets لتحويل أي رابط نصي إلى رابط قابل للنقر في Bluesky
 def extract_bluesky_facets(text):
     facets = []
@@ -393,7 +386,6 @@ def extract_bluesky_facets(text):
     
     for match in re.finditer(url_regex, text):
         url = match.group(0)
-        # حساب النطاق بالبايت (UTF-8 Bytes) لضمان الدقة مع وجود الإيموجي
         start_byte = len(text[:match.start()].encode('utf-8'))
         end_byte = len(text[:match.end()].encode('utf-8'))
         
@@ -409,18 +401,17 @@ def extract_bluesky_facets(text):
         })
     return facets
 
-# 7. المشاركة على Bluesky مع تفعيل الروابط القابلة للنقر
+# 7. المشاركة على Bluesky وإرجاع الجلسة
 def post_to_bluesky(text_content, video_url):
     if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
-        print("⚠️ تم تخطي النشر على Bluesky: متغيرات BLUESKY_HANDLE أو BLUESKY_PASSWORD غير محددة في GitHub Secrets.")
-        return
+        print("⚠️ تم تخطي النشر على Bluesky: متغيرات BLUESKY_HANDLE أو BLUESKY_PASSWORD غير محددة.")
+        return None, None
         
     if not video_url:
         print("⚠️ تم تخطي النشر على Bluesky: لا يوجد رابط فيديو للنشر.")
-        return
+        return None, None
         
     try:
-        # 1. تسجيل الدخول
         session_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.server.createSession",
             json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_PASSWORD},
@@ -429,15 +420,13 @@ def post_to_bluesky(text_content, video_url):
         
         if session_res.status_code != 200:
             print("❌ فشل تسجيل الدخول في Bluesky:", session_res.text)
-            return
+            return None, None
 
         session_data = session_res.json()
         token = session_data.get("accessJwt")
         did = session_data.get("did")
         
         post_text = f"{text_content}\n\n🎬 Watch Video: {video_url}"
-        
-        # 2. استخراج الـ facets لجعل الرابط قابل للنقر
         facets = extract_bluesky_facets(post_text)
         
         headers = {"Authorization": f"Bearer {token}"}
@@ -452,7 +441,6 @@ def post_to_bluesky(text_content, video_url):
             }
         }
         
-        # 3. إنشاء المنشور
         post_res = requests.post(
             "https://bsky.social/xrpc/com.atproto.repo.createRecord",
             headers=headers,
@@ -462,13 +450,14 @@ def post_to_bluesky(text_content, video_url):
         
         if post_res.status_code in [200, 201]:
             print("=== Shared Successfully to Bluesky (with Clickable Link)! ===")
+            return token, did
         else:
             print("❌ فشل نشر التغريدة على Bluesky:", post_res.text)
+            return None, None
 
     except Exception as e:
         print("❌ Bluesky Post Error:", e)
-
-
+        return None, None
 
 # البحث عن منشورات متعلقة بالنيش على Bluesky والرد عليها
 def engage_on_bluesky_niche(token, did, search_query):
@@ -477,7 +466,6 @@ def engage_on_bluesky_niche(token, did, search_query):
         
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        # 1. البحث عن منشورات حديثة باستخدام الكلمة المفتاحية
         search_url = f"https://bsky.social/xrpc/app.bsky.feed.searchPosts?q={search_query}&limit=3"
         res = requests.get(search_url, headers=headers, timeout=15).json()
         posts = res.get("posts", [])
@@ -492,7 +480,6 @@ def engage_on_bluesky_niche(token, did, search_query):
             post_uri = post.get("uri")
             post_cid = post.get("cid")
             
-            # تجنب الرد على منشوراتك الشخصية
             if post.get("author", {}).get("did") == did:
                 continue
                 
@@ -517,10 +504,6 @@ def engage_on_bluesky_niche(token, did, search_query):
     except Exception as e:
         print("❌ Bluesky External Engagement Error:", e)
 
-
-
-
-
 # التفاعل مع قنوات وفيديوهات أخرى على Dailymotion
 def engage_on_dailymotion_niche(access_token, search_query):
     if not access_token or not search_query:
@@ -528,7 +511,6 @@ def engage_on_dailymotion_niche(access_token, search_query):
         
     headers = {"Authorization": f"Bearer {access_token}"}
     try:
-        # 1. البحث عن فيديوهات متعلقة بالموضوع
         search_url = f"https://api.dailymotion.com/videos?search={search_query}&fields=id,owner,title&limit=3&sort=relevance"
         res = requests.get(search_url, headers=headers, timeout=15).json()
         videos = res.get("list", [])
@@ -543,7 +525,6 @@ def engage_on_dailymotion_niche(access_token, search_query):
             vid_id = vid.get("id")
             owner_id = vid.get("owner")
             
-            # أ) إضافة تعليق على فيديو المنافس
             comment_text = random.choice(comments_pool)
             requests.post(
                 f"https://api.dailymotion.com/video/{vid_id}/comments",
@@ -552,7 +533,6 @@ def engage_on_dailymotion_niche(access_token, search_query):
                 timeout=15
             )
             
-            # ب) متابعة قناة المنافس
             if owner_id:
                 requests.post(
                     f"https://api.dailymotion.com/me/following/{owner_id}",
@@ -560,13 +540,11 @@ def engage_on_dailymotion_niche(access_token, search_query):
                     timeout=15
                 )
                 
-            time.sleep(2) # مهلة زمنية لتجنب الحظر
+            time.sleep(2)
             
         print(f"=== Engaged with {len(videos)} external Dailymotion channels in niche! ===")
     except Exception as e:
         print("❌ Dailymotion External Engagement Error:", e)
-
-
 
 # 8. التشغيل الرئيسي
 if __name__ == "__main__":
@@ -591,12 +569,13 @@ if __name__ == "__main__":
     )
     
     if video_url:
-        post_to_bluesky(script_data["bluesky_post"], video_url)
-    if video_url:
-            main_keyword = script_data.get("search_queries", ["tech"])[0]
-            
-            # 1. التفاعل الخارجي على Dailymotion (تعليقات ومتابعة)
-            engage_on_dailymotion_niche(dm_token, main_keyword)
-            
-            # 2. التفاعل الخارجي على Bluesky (الرد على منشورات الآخرين)
-            # يمكنك استخراج token و did من دالة تسجيل دخول Bluesky وتمريرها هنا
+        bs_token, bs_did = post_to_bluesky(script_data["bluesky_post"], video_url)
+        
+        main_keyword = script_data.get("search_queries", ["tech"])[0]
+        
+        # 1. التفاعل الخارجي على Dailymotion
+        engage_on_dailymotion_niche(dm_token, main_keyword)
+        
+        # 2. التفاعل الخارجي على Bluesky
+        if bs_token and bs_did:
+            engage_on_bluesky_niche(bs_token, bs_did, main_keyword)
